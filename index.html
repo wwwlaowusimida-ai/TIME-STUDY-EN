@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IE Time Study Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 禁用双击缩放，保证现场按键迅速响应 */
+        touch-action: manipulation;
+        
+        /* 针对移动端数字显示的等宽字体设定 */
+        .font-mono-num {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        /* 隐藏滚动条但保留滚动功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white pb-10">
+
+    <!-- 顶部 Header -->
+    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-30 px-4 py-3 shadow-md">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <div class="bg-blue-600 p-2 rounded-lg text-white">
+                    <i data-lucide="timer" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base text-white leading-tight">IE Time Study</h1>
+                    <p class="text-xs text-slate-400">Continuous Cycle Measurement</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button id="btnNewProject" class="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2 rounded-lg text-xs font-medium transition flex items-center gap-1 active:scale-95 border border-slate-600">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    Reset Study
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto w-full flex-1 px-4 pt-3 flex flex-col gap-3">
+
+        <!-- 基础信息与参数设置折叠卡片 -->
+        <section class="bg-slate-800 rounded-xl p-3.5 border border-slate-700 shadow-sm">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    <i data-lucide="sliders" class="w-3.5 h-3.5 text-blue-400"></i> Station Settings
+                </span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs text-slate-400">Target Cycles:</span>
+                    <input type="number" id="targetRoundsInput" value="10" min="1" max="50" class="w-12 bg-slate-900 border border-slate-700 rounded text-center text-xs text-blue-300 font-mono-num py-0.5 focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-[11px] text-slate-400 mb-1">Station Name / ID</label>
+                <input type="text" id="stationNameInput" placeholder="e.g. ST10 Labeling" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+            </div>
+        </section>
+
+        <!-- 连续流状态指示栏 (Round & Step Tracker) -->
+        <section class="bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-center justify-between shadow-sm">
+            <div class="flex items-center gap-2">
+                <span id="badgeRound" class="bg-blue-600/30 text-blue-300 border border-blue-500/50 font-mono-num text-xs font-bold px-2.5 py-1 rounded-lg">
+                    Cycle 1 / 10
+                </span>
+                <span id="badgeStepIndex" class="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono-num text-xs font-bold px-2.5 py-1 rounded-lg">
+                    Step 1 / 3
+                </span>
+            </div>
+            <div class="text-right">
+                <div class="text-[10px] text-slate-400">Last Step Time</div>
+                <div id="lastStepDuration" class="text-xs font-bold font-mono-num text-emerald-400">--s</div>
+            </div>
+        </section>
+
+        <!-- 主计时器与巨大打点按键区域 (Stopwatch Core for Continuous Flow) -->
+        <section class="bg-gradient-to-b from-slate-800 to-slate-800/90 rounded-2xl p-4 border border-slate-700 shadow-lg text-center flex flex-col items-center">
+            
+            <!-- 当前正在测量的动作单元名称 (高亮大字) -->
+            <div class="w-full bg-slate-900/90 px-3 py-2.5 rounded-xl mb-2 border border-slate-700/80">
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">CURRENT STEP</div>
+                <div id="currentStepName" class="text-base font-extrabold text-amber-400 truncate">1. Pick and Place Parts</div>
+            </div>
+
+            <!-- 数字时间显示 -->
+            <div class="my-1">
+                <div id="stopwatchDisplay" class="text-5xl font-extrabold font-mono-num text-white tracking-wider drop-shadow-md">
+                    00:00.00
+                </div>
+            </div>
+
+            <!-- 巨大的连续打点/切下一单元触控主按键 (单手盲操) -->
+            <div class="w-full mt-3 space-y-2">
+                <button id="btnMainLap" class="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black py-5 px-4 rounded-2xl shadow-xl transition-all duration-150 flex flex-col items-center justify-center gap-1 text-lg active:scale-95 border border-emerald-400/30">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+                        <span id="btnMainLapText">Start Cycle 1</span>
+                    </div>
+                    <span id="btnMainLapSubText" class="text-xs font-normal text-emerald-200">Tap to start continuous timing</span>
+                </button>
+
+                <!-- 误操作处理：Undo Last / Reset Timer -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnUndoLast" class="bg-slate-700 hover:bg-slate-600 text-amber-300 font-medium py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-1.5 text-xs active:scale-95">
+                        <i data-lucide="undo-2" class="w-3.5 h-3.5"></i>
+                        <span>Undo Last</span>
+                    </button>
+                    <button id="btnResetTimer" class="bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-1.5 text-xs active:scale-95">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                        <span>Reset Timer</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动作单元配置与实时测量数据看板 -->
+        <section class="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-sm flex-1 flex flex-col">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-sm font-bold text-white flex items-center gap-1.5">
+                    <i data-lucide="list-checks" class="w-4 h-4 text-blue-400"></i>
+                    Work Steps & Cycle Times (s)
+                </h2>
+                <button id="btnAddStep" class="bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Step
+                </button>
+            </div>
+
+            <!-- 动作单元列表容器 -->
+            <div id="stepsListContainer" class="space-y-3 overflow-y-auto max-h-[380px] pr-1 no-scrollbar flex-1">
+                <!-- 动态由 JS 渲染填充 -->
+            </div>
+        </section>
+
+        <!-- 整体线平衡与数据汇总统计卡片 -->
+        <section class="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-sm">
+            <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-1.5">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 text-emerald-400"></i>
+                Time Summary
+            </h2>
+
+            <div class="grid grid-cols-2 gap-2 text-center mb-3">
+                <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-700/60">
+                    <div class="text-[10px] text-slate-400 mb-0.5">Total Effective Time</div>
+                    <div id="statTotalTime" class="text-base font-bold font-mono-num text-emerald-400">0.00s</div>
+                </div>
+                <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-700/60">
+                    <div class="text-[10px] text-slate-400 mb-0.5">Completed Cycles</div>
+                    <div id="statCompletedRounds" class="text-base font-bold font-mono-num text-amber-400">0</div>
+                </div>
+            </div>
+
+            <!-- 数据去极值说明标签 -->
+            <p class="text-[11px] text-slate-400 flex items-center gap-1 bg-slate-900/40 p-2 rounded border border-slate-800">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
+                <span>For 3 or more observations, highlight <span class="text-rose-400 font-semibold">MAX</span> and <span class="text-blue-400 font-semibold">MIN</span>. The effective average excludes one highest and one lowest value.</span>
+            </p>
+        </section>
+
+        <!-- 底部数据导出/一键复制操作栏 -->
+        <section class="grid grid-cols-2 gap-3 pt-1">
+            <button id="btnCopyReport" class="bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white font-medium py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-1.5 text-xs transition shadow-sm">
+                <i data-lucide="copy" class="w-4 h-4 text-blue-400"></i>
+                <span>Copy Summary</span>
+            </button>
+            <button id="btnExportCSV" class="bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white font-medium py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-1.5 text-xs transition shadow-sm">
+                <i data-lucide="download" class="w-4 h-4 text-emerald-400"></i>
+                <span>Export CSV</span>
+            </button>
+        </section>
+
+    </main>
+
+    <!-- 弹窗组件：自定义提示与确认 -->
+    <div id="toastNotification" class="fixed bottom-16 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs px-4 py-2 rounded-full shadow-xl transition-all duration-300 opacity-0 pointer-events-none z-50 flex items-center gap-1.5">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
+        <span id="toastText">Copied to clipboard</span>
+    </div>
+
+    <!-- JS 逻辑控制中心 -->
+    <script>
+        // -------------------------------------------------------------
+        // 全局状态管理 State
+        // -------------------------------------------------------------
+        const DEFAULT_STEPS = [
+            { id: 1, name: "1. Pick and Place Parts", data: [] },
+            { id: 2, name: "2. Assembly / Processing", data: [] },
+            { id: 3, name: "3. Labeling & Visual Check", data: [] }
+        ];
+
+        let state = {
+            stationName: "ST-01 Station",
+            targetRounds: 10,
+            currentRound: 1,       // 当前处于第几轮
+            activeStepIndex: 0,    // 当前处于本轮中的第几个动作单元
+            lastStepTime: null,    // 上一个单元耗时
+            steps: JSON.parse(JSON.stringify(DEFAULT_STEPS))
+        };
+
+        // 计时器变量
+        let timerInterval = null;
+        let startTime = 0;
+        let elapsedTime = 0;
+        let isRunning = false;
+
+        // -------------------------------------------------------------
+        // DOM 元素缓存
+        // -------------------------------------------------------------
+        const stopwatchDisplay = document.getElementById('stopwatchDisplay');
+        const btnMainLap = document.getElementById('btnMainLap');
+        const btnMainLapText = document.getElementById('btnMainLapText');
+        const btnMainLapSubText = document.getElementById('btnMainLapSubText');
+        const btnResetTimer = document.getElementById('btnResetTimer');
+        const btnUndoLast = document.getElementById('btnUndoLast');
+        const currentStepName = document.getElementById('currentStepName');
+        const stepsListContainer = document.getElementById('stepsListContainer');
+        const btnAddStep = document.getElementById('btnAddStep');
+        const btnNewProject = document.getElementById('btnNewProject');
+        const stationNameInput = document.getElementById('stationNameInput');
+        const targetRoundsInput = document.getElementById('targetRoundsInput');
+        const badgeRound = document.getElementById('badgeRound');
+        const badgeStepIndex = document.getElementById('badgeStepIndex');
+        const lastStepDuration = document.getElementById('lastStepDuration');
+        const statTotalTime = document.getElementById('statTotalTime');
+        const statCompletedRounds = document.getElementById('statCompletedRounds');
+        const btnCopyReport = document.getElementById('btnCopyReport');
+        const btnExportCSV = document.getElementById('btnExportCSV');
+        const toastNotification = document.getElementById('toastNotification');
+        const toastText = document.getElementById('toastText');
+
+        // -------------------------------------------------------------
+        // 初始化与 LocalStorage 读取
+        // -------------------------------------------------------------
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFromLocalStorage();
+            renderUI();
+            lucide.createIcons();
+        });
+
+        function saveToLocalStorage() {
+            localStorage.setItem('IE_TIME_STUDY_CONTINUOUS_STATE', JSON.stringify(state));
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('IE_TIME_STUDY_CONTINUOUS_STATE');
+            if (saved) {
+                try {
+                    state = JSON.parse(saved);
+                } catch(e) {
+                    console.error("Failed to restore saved data", e);
+                }
+            }
+            stationNameInput.value = state.stationName || "";
+            targetRoundsInput.value = state.targetRounds || 10;
+        }
+
+        // -------------------------------------------------------------
+        // 高精度计时器 (High-Precision Stopwatch)
+        // -------------------------------------------------------------
+        function formatTime(ms) {
+            const totalSeconds = ms / 1000;
+            const mins = Math.floor(totalSeconds / 60);
+            const secs = Math.floor(totalSeconds % 60);
+            const hundredths = Math.floor((ms % 1000) / 10);
+
+            const mm = String(mins).padStart(2, '0');
+            const ss = String(secs).padStart(2, '0');
+            const hh = String(hundredths).padStart(2, '0');
+
+            return `${mm}:${ss}.${hh}`;
+        }
+
+        function updateTimerDisplay() {
+            const now = Date.now();
+            const currentElapsed = elapsedTime + (now - startTime);
+            stopwatchDisplay.textContent = formatTime(currentElapsed);
+        }
+
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimerDisplay, 10);
+            updateMainLapButtonState();
+        }
+
+        function pauseTimer() {
+            if (!isRunning) return;
+            isRunning = false;
+            clearInterval(timerInterval);
+            elapsedTime += Date.now() - startTime;
+        }
+
+        function resetTimer() {
+            if (isRunning) {
+                isRunning = false;
+                clearInterval(timerInterval);
+            }
+            elapsedTime = 0;
+            stopwatchDisplay.textContent = "00:00.00";
+            updateMainLapButtonState();
+        }
+
+        function updateMainLapButtonState() {
+            const isLastStepInRound = state.activeStepIndex === state.steps.length - 1;
+
+            // 待机状态：开始下一轮也集成在主按钮上
+            if (!isRunning && elapsedTime === 0) {
+                btnMainLapText.textContent = `Start Cycle ${state.currentRound}`;
+                btnMainLapSubText.textContent = "Tap to start continuous timing";
+                btnMainLap.classList.remove('bg-blue-600', 'hover:bg-blue-500', 'bg-purple-600', 'hover:bg-purple-500');
+                btnMainLap.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                return;
+            }
+
+            if (isLastStepInRound) {
+                btnMainLapText.textContent = "Finish Cycle (Auto Stop)";
+                btnMainLapSubText.textContent = "Tap to record final step and end cycle";
+                btnMainLap.classList.remove('bg-blue-600', 'hover:bg-blue-500', 'bg-emerald-600', 'hover:bg-emerald-500');
+                btnMainLap.classList.add('bg-purple-600', 'hover:bg-purple-500');
+            } else {
+                btnMainLapText.textContent = "Record Step (Next)";
+                btnMainLapSubText.textContent = "Save time and move to next step";
+                btnMainLap.classList.remove('bg-purple-600', 'hover:bg-purple-500', 'bg-emerald-600', 'hover:bg-emerald-500');
+                btnMainLap.classList.add('bg-blue-600', 'hover:bg-blue-500');
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 连续流测量逻辑：打点 / 自动跳转 / 一轮自动结束
+        // -------------------------------------------------------------
+        btnResetTimer.addEventListener('click', () => {
+            resetTimer();
+        });
+
+        btnUndoLast.addEventListener('click', () => {
+            undoLastRecord();
+        });
+
+        btnMainLap.addEventListener('click', () => {
+            // 待机时，主按钮就是“开始第 X 轮”
+            if (!isRunning && elapsedTime === 0) {
+                startTimer();
+                return;
+            }
+
+            // 1. 计算当前动作单元精确耗时
+            const now = Date.now();
+            const currentTotalMs = elapsedTime + (isRunning ? (now - startTime) : 0);
+            const secondsRecorded = parseFloat((currentTotalMs / 1000).toFixed(2));
+
+            if (secondsRecorded <= 0) return;
+
+            // 2. 存入当前动作单元（按轮次固定索引，避免删除历史值后轮次错位）
+            const currentStep = state.steps[state.activeStepIndex];
+            if (currentStep) {
+                currentStep.data[state.currentRound - 1] = secondsRecorded;
+            }
+
+            state.lastStepTime = secondsRecorded;
+            lastStepDuration.textContent = secondsRecorded.toFixed(2) + "s";
+
+            // 3. 判断是否是本轮的最后一个动作单元
+            const isLastStepInRound = state.activeStepIndex === state.steps.length - 1;
+
+            if (isLastStepInRound) {
+                // --- 本轮全流程测量结束 ---
+                pauseTimer();
+                elapsedTime = 0;
+                stopwatchDisplay.textContent = "00:00.00";
+                
+                showToast(`🎉 Cycle ${state.currentRound} completed!`);
+                
+                // 准备进入下一轮
+                state.currentRound += 1;
+                state.activeStepIndex = 0; // 重置回到第一个单元
+
+            } else {
+                // --- 自动跳转到下一个工作单元 ---
+                state.activeStepIndex += 1;
+
+                // 秒表归零重新记下一个动作单元
+                clearInterval(timerInterval);
+                elapsedTime = 0;
+                startTime = Date.now();
+                if (isRunning) {
+                    timerInterval = setInterval(updateTimerDisplay, 10);
+                }
+                showToast(`Recorded ${secondsRecorded}s ➔ Next step`);
+            }
+
+            saveToLocalStorage();
+            renderUI();
+        });
+
+        // -------------------------------------------------------------
+        // IE 去极值算法与汇总统计
+        // -------------------------------------------------------------
+        function calculateStepStats(data) {
+            const validEntries = (data || [])
+                .map((val, idx) => ({ val, idx }))
+                .filter(item => typeof item.val === 'number' && Number.isFinite(item.val));
+
+            if (validEntries.length === 0) {
+                return { avg: 0, minIdx: -1, maxIdx: -1, isTrimmed: false };
+            }
+
+            if (validEntries.length < 3) {
+                const sum = validEntries.reduce((total, item) => total + item.val, 0);
+                return { avg: (sum / validEntries.length).toFixed(2), minIdx: -1, maxIdx: -1, isTrimmed: false };
+            }
+
+            let maxEntry = validEntries[0];
+            let minEntry = validEntries[0];
+            validEntries.forEach(item => {
+                if (item.val > maxEntry.val) maxEntry = item;
+                if (item.val < minEntry.val) minEntry = item;
+            });
+
+            const totalSum = validEntries.reduce((total, item) => total + item.val, 0);
+            const trimmedSum = totalSum - maxEntry.val - minEntry.val;
+            const validCount = validEntries.length - 2;
+            const trimmedAvg = (trimmedSum / validCount).toFixed(2);
+
+            return { avg: trimmedAvg, minIdx: minEntry.idx, maxIdx: maxEntry.idx, isTrimmed: true };
+        }
+
+        // -------------------------------------------------------------
+        // UI 动态渲染
+        // -------------------------------------------------------------
+        function renderUI() {
+            // 更新顶部轮数与状态指示栏
+            badgeRound.textContent = `Cycle ${state.currentRound} / ${state.targetRounds || 10}`;
+            badgeStepIndex.textContent = `Step ${state.activeStepIndex + 1} / ${state.steps.length}`;
+
+            if (state.steps[state.activeStepIndex]) {
+                currentStepName.textContent = state.steps[state.activeStepIndex].name;
+            } else {
+                currentStepName.textContent = "Please add a step";
+            }
+
+            updateMainLapButtonState();
+
+            // 计算真正完整的轮数：该轮每个动作单元都必须有有效数据
+            const maxRoundCount = Math.max(0, ...state.steps.map(s => s.data.length));
+            let completedRounds = 0;
+            for (let r = 0; r < maxRoundCount; r++) {
+                if (state.steps.every(s => typeof s.data[r] === 'number' && Number.isFinite(s.data[r]))) {
+                    completedRounds += 1;
+                }
+            }
+            statCompletedRounds.textContent = completedRounds;
+
+            // 渲染动作单元列表与各轮耗时数据
+            stepsListContainer.innerHTML = '';
+            let grandTotalTime = 0;
+
+            state.steps.forEach((step, index) => {
+                const isActive = index === state.activeStepIndex;
+                const stats = calculateStepStats(step.data);
+                grandTotalTime += parseFloat(stats.avg || 0);
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border transition-all ${
+                    isActive 
+                        ? 'bg-slate-700/90 border-amber-500 shadow-md ring-1 ring-amber-500/50' 
+                        : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                }`;
+
+                // 生成数据 Chip 标签
+                let dataChipsHTML = '';
+                if (step.data.length === 0) {
+                    dataChipsHTML = `<span class="text-xs text-slate-500 italic">No observations yet. Start timing to record.</span>`;
+                } else {
+                    dataChipsHTML = step.data.map((val, dIdx) => {
+                        if (typeof val !== 'number' || !Number.isFinite(val)) {
+                            return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono-num border border-slate-800 bg-slate-900/30 text-slate-600" title="Observation deleted">R${dIdx+1}: --</span>`;
+                        }
+
+                        let chipStyle = "bg-slate-800 text-slate-300 border-slate-700 hover:border-rose-500/70";
+                        let badgeText = "";
+
+                        if (stats.isTrimmed) {
+                            if (dIdx === stats.maxIdx) {
+                                chipStyle = "bg-rose-950/80 text-rose-300 border-rose-800 font-bold hover:border-rose-500";
+                                badgeText = '<span class="text-[8px] bg-rose-800 text-white px-1 rounded ml-1">MAX</span>';
+                            } else if (dIdx === stats.minIdx) {
+                                chipStyle = "bg-blue-950/80 text-blue-300 border-blue-800 font-bold hover:border-rose-500/70";
+                                badgeText = '<span class="text-[8px] bg-blue-800 text-white px-1 rounded ml-1">MIN</span>';
+                            }
+                        }
+
+                        return `<button onclick="deleteObservation(${index}, ${dIdx})" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono-num border ${chipStyle} transition" title="Tap to delete observation R${dIdx+1}">
+                            R${dIdx+1}: ${val.toFixed(2)}s${badgeText}<span class="ml-1 text-[10px] opacity-60">×</span>
+                        </button>`;
+                    }).join('');
+                }
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                            <span class="w-2 h-2 rounded-full ${isActive ? 'bg-amber-400 animate-pulse' : 'bg-slate-600'}"></span>
+                            <input type="text" value="${escapeHtml(step.name)}" onchange="updateStepName(${index}, this.value)" class="bg-transparent text-xs font-bold text-white border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none w-full truncate">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-mono-num font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">
+                                Avg: ${stats.avg}s
+                            </span>
+                            <button onclick="deleteStep(${index})" class="text-slate-500 hover:text-rose-400 p-1" title="Delete step">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/80">
+                        ${dataChipsHTML}
+                    </div>
+                `;
+
+                stepsListContainer.appendChild(card);
+            });
+
+            // 汇总计算
+            statTotalTime.textContent = grandTotalTime.toFixed(2) + "s";
+
+            lucide.createIcons();
+        }
+
+        // -------------------------------------------------------------
+        // 参数与工作单元修改监听
+        // -------------------------------------------------------------
+        function updateStepName(index, newName) {
+            if (state.steps[index]) {
+                state.steps[index].name = newName || `Step ${index + 1}`;
+                saveToLocalStorage();
+                renderUI();
+            }
+        }
+
+        function deleteObservation(stepIndex, roundIndex) {
+            const step = state.steps[stepIndex];
+            if (!step || typeof step.data[roundIndex] !== 'number') return;
+            const oldValue = step.data[roundIndex];
+            if (confirm(`Delete R${roundIndex + 1} (${oldValue.toFixed(2)}s) for ${step.name}?`)) {
+                // 保留空位，确保后续 R4/R5 不会因为删除 R3 而错位
+                step.data[roundIndex] = null;
+                saveToLocalStorage();
+                renderUI();
+                showToast(`Deleted R${roundIndex + 1}: ${oldValue.toFixed(2)}s`);
+            }
+        }
+
+        function undoLastRecord() {
+            if (!state.steps.length) return;
+
+            let targetStepIndex;
+            let targetRoundIndex;
+
+            if (state.activeStepIndex > 0) {
+                // 当前轮已经完成至少一个单元：撤销前一个单元
+                targetStepIndex = state.activeStepIndex - 1;
+                targetRoundIndex = state.currentRound - 1;
+            } else if (!isRunning && state.currentRound > 1) {
+                // 刚完成整轮：撤销上一轮最后一个单元，并回到该轮
+                targetStepIndex = state.steps.length - 1;
+                targetRoundIndex = state.currentRound - 2;
+                state.currentRound -= 1;
+            } else {
+                showToast("No previous record to undo");
+                return;
+            }
+
+            const step = state.steps[targetStepIndex];
+            const value = step?.data?.[targetRoundIndex];
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+                showToast("Previous record is empty; cannot undo");
+                return;
+            }
+
+            // 停止当前计时并退回被撤销的动作单元，便于立即重测
+            if (isRunning) pauseTimer();
+            clearInterval(timerInterval);
+            isRunning = false;
+            elapsedTime = 0;
+            stopwatchDisplay.textContent = "00:00.00";
+
+            step.data[targetRoundIndex] = null;
+            state.activeStepIndex = targetStepIndex;
+            state.lastStepTime = null;
+            lastStepDuration.textContent = "--s";
+
+            saveToLocalStorage();
+            renderUI();
+            showToast(`Undid R${targetRoundIndex + 1} · ${step.name}; ready to remeasure`);
+        }
+
+        function deleteStep(index) {
+            if (state.steps.length <= 1) {
+                showToast("Keep at least one step");
+                return;
+            }
+            if (confirm(`Delete ${state.steps[index].name}?`)) {
+                state.steps.splice(index, 1);
+                if (state.activeStepIndex >= state.steps.length) {
+                    state.activeStepIndex = 0;
+                }
+                saveToLocalStorage();
+                renderUI();
+            }
+        }
+
+        btnAddStep.addEventListener('click', () => {
+            const newId = state.steps.length + 1;
+            state.steps.push({
+                id: Date.now(),
+                name: `${newId}. New Step`,
+                data: []
+            });
+            saveToLocalStorage();
+            renderUI();
+        });
+
+        stationNameInput.addEventListener('change', (e) => {
+            state.stationName = e.target.value;
+            saveToLocalStorage();
+        });
+
+        targetRoundsInput.addEventListener('change', (e) => {
+            state.targetRounds = parseInt(e.target.value) || 10;
+            saveToLocalStorage();
+            renderUI();
+        });
+
+        btnNewProject.addEventListener('click', () => {
+            if (confirm("Reset study? All step observations will be cleared.")) {
+                state.steps = JSON.parse(JSON.stringify(DEFAULT_STEPS));
+                state.currentRound = 1;
+                state.activeStepIndex = 0;
+                state.lastStepTime = null;
+                resetTimer();
+                saveToLocalStorage();
+                renderUI();
+                showToast("Study reset");
+            }
+        });
+
+        // -------------------------------------------------------------
+        // 文本报告复制与 CSV 表格导出
+        // -------------------------------------------------------------
+        btnCopyReport.addEventListener('click', () => {
+            const circled = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+            let reportText = `【${state.stationName || 'Unnamed Station'} Time Study】\n\n`;
+            let grandTotal = 0;
+
+            state.steps.forEach((step, index) => {
+                const stats = calculateStepStats(step.data);
+                const avg = parseFloat(stats.avg || 0);
+                grandTotal += avg;
+
+                // 去掉步骤名称前面已有的“1. / 2. ”，避免和①②重复
+                const cleanName = String(step.name || `Step ${index + 1}`).replace(/^\s*\d+\s*[.、．-]?\s*/, '');
+                const prefix = circled[index] || `${index + 1}.`;
+                const rawVals = step.data.length
+                    ? step.data.map(v => (typeof v === 'number' && Number.isFinite(v)) ? v.toFixed(2).replace(/\.00$/, '') : '--').join(' / ')
+                    : '--';
+
+                reportText += `${prefix} ${cleanName}\n`;
+                reportText += `${rawVals} → Avg ${avg.toFixed(2)}s\n\n`;
+            });
+
+            reportText += `📊 Total ${grandTotal.toFixed(2)}s`;
+            copyToClipboard(reportText);
+        });
+
+        btnExportCSV.addEventListener('click', () => {
+            // 仅调整 CSV 输出格式；UI 与其他功能保持不变
+            const escapeCSV = (value) => {
+                const str = String(value ?? "");
+                return `"${str.replace(/"/g, '""')}"`;
+            };
+
+            let csvContent = "\uFEFF"; // UTF-8 BOM 防止 Excel 中文乱码
+
+            // 顶部基本信息：参考传统 Time Study 表格式
+            csvContent += `${escapeCSV("Operation Name")},${escapeCSV(state.stationName || "Unnamed")},${escapeCSV("Product Name/#")},,${escapeCSV("Observation Date")},${escapeCSV(new Date().toLocaleDateString())}\n`;
+            csvContent += "\n";
+
+            // 主表：取消 Observation Point、Adjustment、5W Cycle Time
+            const maxObservations = Math.max(10, ...state.steps.map(step => step.data.length));
+            const observationHeaders = Array.from({ length: maxObservations }, (_, i) => `Observation ${i + 1}`);
+            const headers = [
+                "Step #",
+                "Step Description",
+                ...observationHeaders,
+                "Low Time (s)",
+                "High Time (s)",
+                "Step Time (s)"
+            ];
+            csvContent += headers.map(escapeCSV).join(",") + "\n";
+
+            state.steps.forEach((step, index) => {
+                const stats = calculateStepStats(step.data);
+                const validData = step.data.filter(v => typeof v === 'number' && Number.isFinite(v));
+                const lowTime = validData.length ? Math.min(...validData).toFixed(2) : "";
+                const highTime = validData.length ? Math.max(...validData).toFixed(2) : "";
+                const stepTime = validData.length ? Number(stats.avg).toFixed(2) : "";
+
+                const observations = Array.from({ length: maxObservations }, (_, i) =>
+                    (typeof step.data[i] === 'number' && Number.isFinite(step.data[i])) ? step.data[i].toFixed(2) : ""
+                );
+
+                const row = [
+                    index + 1,
+                    step.name,
+                    ...observations,
+                    lowTime,
+                    highTime,
+                    stepTime
+                ];
+                csvContent += row.map(escapeCSV).join(",") + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `TimeStudy_${state.stationName || 'ST'}_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast("CSV exported in Time Study format");
+        });
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => showToast("Summary copied to clipboard!")).catch(() => fallbackCopy(text));
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast("Summary copied to clipboard!");
+            } catch (err) {
+                showToast("Copy failed; please take a screenshot");
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function showToast(msg) {
+            toastText.textContent = msg;
+            toastNotification.classList.remove('opacity-0', 'pointer-events-none');
+            toastNotification.classList.add('opacity-100');
+            setTimeout(() => {
+                toastNotification.classList.remove('opacity-100');
+                toastNotification.classList.add('opacity-0', 'pointer-events-none');
+            }, 2000);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+    </script>
+</body>
+</html>
